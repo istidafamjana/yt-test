@@ -5,6 +5,7 @@ import random
 import string
 from werkzeug.utils import secure_filename
 import tempfile
+import time
 
 app = Flask(__name__)
 
@@ -39,26 +40,36 @@ def download_media():
             'socket_timeout': 30,
             'retries': 3,
             'outtmpl': os.path.join(app.config['DOWNLOAD_FOLDER'], generate_random_name('%(ext)s')),
-            'cookiefile': 'cookies.txt',  # إضافة ملف الكوكيز
             'extractor_args': {
                 'youtube': {
-                    'skip': ['authcheck']  # تخطي التحقق من الصحة
+                    'skip': ['authcheck', 'agegate']  # تخطي التحقق من العمر والتحقق من الصحة
                 }
             },
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9'
-            }
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.youtube.com/',
+                'Origin': 'https://www.youtube.com'
+            },
+            'sleep_interval': 5,  # تأخير بين الطلبات
+            'force_ipv4': True,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US'
         }
 
         if platform == 'youtube':
             ydl_opts['format'] = 'best[height<=1080][ext=mp4]'
         elif platform == 'instagram':
             ydl_opts['format'] = 'best[ext=mp4][protocol=https]/best'
+            ydl_opts['extractor_args']['instagram'] = {'skip': ['login']}
         elif platform == 'tiktok':
             ydl_opts['format'] = 'best[ext=mp4][protocol=https]'
+            ydl_opts['http_headers']['Referer'] = 'https://www.tiktok.com/'
         else:
             return jsonify({'error': 'نظام التشغيل غير معروف'}), 400
+
+        # إضافة تأخير عشوائي لتجنب الحظر
+        time.sleep(random.randint(1, 3))
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -82,12 +93,13 @@ def download_media():
                 return jsonify({'error': 'فشل في التحميل (لم يتم إنشاء الملف)'}), 500
 
     except yt_dlp.utils.DownloadError as e:
-        if "سجل الدخول لتأكيد أنك لست روبوتيًا" in str(e):
+        error_msg = str(e)
+        if "سجل الدخول لتأكيد أنك لست روبوتيًا" in error_msg:
             return jsonify({
                 'error': 'يوتيوب يطلب التحقق من أنك لست روبوتًا',
-                'solution': 'جرب استخدام ملف كوكيز صالح أو انتظر بعض الوقت قبل المحاولة مرة أخرى'
+                'solution': 'جرب تغيير عنوان IP أو انتظر بعض الوقت قبل المحاولة مرة أخرى'
             }), 403
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': error_msg}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -95,7 +107,8 @@ def download_media():
 def home():
     return jsonify({
         'message': 'API تحميل الفيديوهات',
-        'usage': '/download?url=<رابط الفيديو>&platform=<youtube|instagram|tiktok>'
+        'usage': '/download?url=<رابط الفيديو>&platform=<youtube|instagram|tiktok>',
+        'note': 'لا يستخدم ملفات الكوكيز'
     })
 
 if __name__ == '__main__':
